@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include "tokens.h"
 #include "statements.h"
+#include "checkpoints.h"
 #include "netlist.h"
 
 int main(int argc, char *argv[]) {
@@ -25,13 +26,17 @@ int main(int argc, char *argv[]) {
 		return -1;
 	}
 
-	netlist nl;
-	if (!nl.create(modules.begin()->c_wires, modules.begin()->c_components)) {
+	if (!make_checkpoints(argv[1], modules)) {
 		return -1;
 	}
 
-	std::string n1_file = std::string(evl_file + ".netlist");
-	nl.save(n1_file);
+	//netlist nl;
+	//if (!nl.create(modules.begin()->c_wires, modules.begin()->c_components)) {
+	//	return -1;
+	//}
+
+	//std::string n1_file = std::string(evl_file + ".netlist");
+	//nl.save(n1_file);
 
 	//nl.file_name = evl_file;
 	//nl.simulate(1000);

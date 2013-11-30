@@ -8,18 +8,34 @@
 #include "statements.h"
 
 
-bool move_tokens_to_statement(evl_tokens &statement_tokens, evl_tokens &tokens) {
+bool move_comp_to_statement(evl_tokens &statement_tokens, evl_tokens &tokens) {
 	assert(statement_tokens.empty());
 	assert(!tokens.empty());
 
 	for (; !tokens.empty();) {
 		statement_tokens.push_back(tokens.front());
 		tokens.erase(tokens.begin());
-		if (statement_tokens.back().str == ";")
-			break;		//exit if the ending ";" is found
+		if (statement_tokens.back().str == ")")
+			break;		//exit if the ending ")" is found
 	}
-	if (statement_tokens.back().str != ";") {
-		std::cerr << "Look for ';' but reach the end of file" << std::endl;
+	if (statement_tokens.back().str != ")") {
+		std::cerr << "Look for ')' but reach the end of file" << std::endl;
+		return false;
+	}
+	return true;
+}
+bool move_wire_to_statement(evl_tokens &statement_tokens, evl_tokens &tokens) {
+	assert(statement_tokens.empty());
+	assert(!tokens.empty());
+
+	for (; !tokens.empty();) {
+		statement_tokens.push_back(tokens.front());
+		tokens.erase(tokens.begin());
+		if (statement_tokens.back().str == "=")
+			break;		//exit if the ending "=" is found
+	}
+	if (statement_tokens.back().str != "=") {
+		std::cerr << "Look for '=' but reach the end of file" << std::endl;
 		return false;
 	}
 	return true;
@@ -35,58 +51,53 @@ bool group_tokens_into_statements(evl_statements &statements, evl_tokens &tokens
 			return false;
 		}
 
-		if (token.str == "module") {				//MODULE statement
-			evl_statement module;
-			module.type = evl_statement::MODULE;
+		if ((token.str == "INPUT") || (token.str == "OUTPUT") || (token.str == "AND") ||
+			(token.str == "NAND") || (token.str == "OR") || (token.str == "NOR") ||
+			(token.str == "DFF") || (token.str == "NOT")) {
+			
+			evl_statement component;
+			component.type = evl_statement::COMPONENT;
+			
 
-			if(!move_tokens_to_statement(module.tokens, tokens)){
+			if(!move_comp_to_statement(component.tokens, tokens)) {
 				return false;
 			}
-			statements.push_back(module);
-		}
-		else if (token.str == "endmodule") {		//ENDMODULE statement
-			evl_statement endmodule;
-			endmodule.type = evl_statement::ENDMODULE;
-			endmodule.tokens.push_back(token);
 
-			tokens.erase(tokens.begin());
-			statements.push_back(endmodule);
+			//INPUT and OUTPUT are both components and wires;
+			if ((token.str == "INPUT") || (token.str == "OUTPUT")) {
+				evl_statement wire;
+				wire.type = evl_statement::WIRE;
+				wire.tokens = component.tokens;
+				statements.push_back(wire);
+			}
+			statements.push_back(component);
 		}
-		else if (token.str == "wire") {			//WIRE statement
+		else {
 			evl_statement wire;
 			wire.type = evl_statement::WIRE;
 
-			if(!move_tokens_to_statement(wire.tokens, tokens)){
+			if(!move_wire_to_statement(wire.tokens, tokens)) {
 				return false;
 			}
 			statements.push_back(wire);
 		}
-		else {									//COMPONENT statement
-			evl_statement component;
-			component.type = evl_statement::COMPONENT;
-
-			if(!move_tokens_to_statement(component.tokens, tokens)){
-				return false;
-			}
-			statements.push_back(component);
-		}
 	}
 	return true;
 }
+
 //Re-order statements so order is MODULE,WIRES,COMPONENTS,ENDMODULE,...repeat
 bool reorder_statements_list (evl_statements::const_iterator m_itr, evl_statements &statements){
+        
+	m_itr = statements.begin();
+
 	for(evl_statements::const_iterator it = statements.begin(); it != statements.end(); ++it) {
-		
-		if (it->type == evl_statement::MODULE) {
-			m_itr = it;
-		}
-		else if (it->type == evl_statement::WIRE) {
+		if (it->type == evl_statement::WIRE) {
 			statements.insert(++m_itr,*it);
 			m_itr--;
 			it = statements.erase(it);
-			--it;
+			//--it;
 		}
-	}	
+	}        
 	return true;
 }
 void display_statements(std::ostream &out, const evl_statements &statements) {
@@ -120,67 +131,35 @@ bool store_statements_to_file(std::string file_name, const evl_statements &state
 	display_statements(output_file, statements);
 	
 	std::cout << file_name << std::endl;
-	
+
 	return true;
-
-
 }
 //Module name and module number stored in a std::map
-bool process_module_statements(evl_modules &modules, evl_statement &s) {
+int i = 0;
+bool process_statements(evl_modules &modules, evl_statement &s) {
 	//assert(s.type == evl_statement::MODULE);
 
 	enum state_type {INIT, NAME, SEMI_CHECK, CHK_STMT, WIRE, COMPONENT, ENDMOD, DONE};
 
 	state_type state;
 
-	if(s.type == evl_statement::MODULE) {
-		state = INIT;
-	}
-	else if (s.type == evl_statement::ENDMODULE) {
-		state = ENDMOD;
-	}
-	else if (s.type == evl_statement::WIRE) {
+	if (s.type == evl_statement::WIRE) {
 		state = WIRE;
 	}
 	else if (s.type == evl_statement::COMPONENT) {
 		state = COMPONENT;
 	}
 
+	if(i == 0) {
+		evl_module mod;
+		mod.name = "top";
+		modules.push_back(mod);
+		i++;
+	}
 	for (; !s.tokens.empty() && (state != DONE); s.tokens.pop_front()) {
 		evl_token t = s.tokens.front();
-		
-		if (state == INIT) {
-			if (t.type == evl_token::NAME && t.str == "module") {
-				state = NAME;
-			}
-			else {
-				std::cerr << "Need 'module' but found '" << t.str << "' at line " << t.line_no << std::endl;
-				return false;
-			}
-		}
-		else if (state == NAME) {
-			if (t.type == evl_token::NAME && t.str != "module") {
-				evl_module mod;
-				mod.name = t.str;
-				modules.push_back(mod);
 
-				state = SEMI_CHECK;	
-			}
-			else {
-				std::cerr << "Need a NAME but found '" << t.str << "' at line " << t.line_no << std::endl;
-				return false;
-			}
-		}
-		else if (state == SEMI_CHECK) {
-			if (t.type == evl_token::SINGLE && t.str == ";") {
-				state = DONE;
-			}
-			else {
-				std::cerr << "Need a ';' but found '" << t.str << "' at line " << t.line_no << std::endl;
-				return false;
-			}
-		}
-		else if (state == WIRE) {
+		if (state == WIRE) {
 			evl_wires wires;
 			if (!process_wire_statements(wires,s)) {
 					return false;
@@ -193,7 +172,7 @@ bool process_module_statements(evl_modules &modules, evl_statement &s) {
 		}
 		else if (state == COMPONENT) {
 			evl_components comp;
-			if (!process_component_statements(comp,s,modules.back().c_wires)) {
+			if (!process_component_statements(comp,s,modules.back().c_wires,modules.back().c_checkpoints)) {
 				return false;
 			}
 			else {
@@ -202,12 +181,8 @@ bool process_module_statements(evl_modules &modules, evl_statement &s) {
 				break;
 			}
 		}
-		else if (state == ENDMOD) {
-			if(s.type == evl_statement::ENDMODULE) {
-				state = DONE;
-			}
-		}
 		else {
+			//state = DONE;
 			assert(false); //never should get here
 		}
 	}
@@ -220,19 +195,40 @@ bool process_module_statements(evl_modules &modules, evl_statement &s) {
 bool process_wire_statements(evl_wires &wires, evl_statement &s) {
 	assert(s.type == evl_statement::WIRE);
 	
-	enum state_type {INIT, WIRE, WIRES, WIRE_NAME, BUS, BUS_MSB, BUS_COLON, BUS_LSB, BUS_DONE, DONE};
+	enum state_type {INIT, WIRE,IO, WIRES, WIRE_NAME, BUS, BUS_MSB, BUS_COLON, BUS_LSB, BUS_DONE, DONE};
 
 	state_type state = INIT;
 	int bus_width = 1;
 	for (; !s.tokens.empty() && (state != DONE); s.tokens.pop_front()) {
 		evl_token t = s.tokens.front();
 		if (state == INIT) {
-			if (t.str == "wire") {
+			
+			if ((t.str == "INPUT") || (t.str == "OUTPUT")) {
+				state = IO;
+			}
+			else {
+				if (t.type == evl_token::NAME) {
+					evl_wires::iterator it = wires.find(t.str);
+					if(it != wires.end()) {
+						std::cerr << "Wire '" << t.str << "' on line " << t.line_no << " is already defined" << std::endl;
+						return false;
+					}
+					wires.insert(std::make_pair(t.str, bus_width));
+					state = WIRE_NAME;
+				}
+			}
+		}
+		else if (state == IO) {
+			if (t.type == evl_token::SINGLE) {
+				if(t.str != "("){
+					std::cerr << "Need a '(' but found '" << t.str << "' on line" << t.line_no << std::endl;
+					return false;
+				}
 				state = WIRE;
 			}
 			else {
-				std::cerr << "Need 'wire' but found '" << t.str << "' on line " << t.line_no << std::endl;
-				return false;
+				std::cerr << "Need Input or Output designation but found '" << t.str << "' on line " << t.line_no << std::endl;
+				return false;		
 			}
 		}
 		else if (state == WIRE) {
@@ -245,83 +241,13 @@ bool process_wire_statements(evl_wires &wires, evl_statement &s) {
 				wires.insert(std::make_pair(t.str, bus_width));
 				state = WIRE_NAME;
 			}
-			else if (t.type == evl_token::SINGLE) {
-				if(t.str != "["){
-					std::cerr << "Need a '[' buf found '" << t.str << "' on line" << t.line_no << std::endl;
-					return false;
-				}
-				state = BUS;
-			}
 			else {
 				std::cerr << "Need 'wire' but found '" << t.str << "' on line " << t.line_no << std::endl;
 				return false;
 			}
 		}
-		else if (state == WIRES) {
-				if (t.type == evl_token::NAME) {
-					evl_wires::iterator it = wires.find(t.str);
-					if(it != wires.end()) {
-						std::cerr << "Wire '" << t.str << "' on line " << t.line_no << " is already defined" << std::endl;
-						return false;
-					}
-					wires.insert(std::make_pair(t.str, bus_width));
-					state = WIRE_NAME;
-				}
-			
-		}
-		else if (state == BUS){
-			if(t.type == evl_token::NUMBER) {
-				bus_width = atoi(t.str.c_str())+1;
-				if(bus_width < 2) {
-					std::cerr << "Bus width entered is " << bus_width << " but needs a bus width of at least 2. Line No: " << t.line_no << std::endl;
-					return false;
-				}
-			}
-			else {
-				std::cerr << "Need 'number' but found '" << t.str << "' on line " << t.line_no << std::endl;
-				return false;
-			}
-			state = BUS_MSB;
-		}
-		else if (state == BUS_MSB) {
-			if(t.str != ":") {
-				std::cerr << "Need a ':' buf found '" << t.str << "' on line " << t.line_no << std::endl;
-				return false;
-			}
-			state = BUS_COLON;
-
-		}
-		else if (state == BUS_COLON) {
-			if(t.type == evl_token::NUMBER) {
-				if(t.str != "0"){
-					std::cerr << "Need a '0' buf found '" << t.str << "' on line " << t.line_no << std::endl;
-					return false;
-				}
-				state = BUS_LSB;
-			}
-		}
-		else if (state == BUS_LSB) {
-			if(t.type == evl_token::SINGLE) {
-				if (t.str != "]") {
-					std::cerr << "Need a ']' buf found '" << t.str << "' on line" << t.line_no << std::endl;
-					return false;
-				}
-				state = BUS_DONE;
-			}
-
-		}
-		else if (state == BUS_DONE) {
-			wires.insert(std::make_pair(t.str, bus_width));
-	
-			state = WIRE_NAME;
-		}
-
-
 		else if (state == WIRE_NAME) {
-			if (t.str == ",") {
-				state = WIRES;
-			}
-			else if (t.str == ";") {
+			if ((t.str == ")") || (t.str == "=")) {
 				state = DONE;
 			}
 			else {
@@ -340,8 +266,8 @@ bool process_wire_statements(evl_wires &wires, evl_statement &s) {
 
 	return true;
 }
-bool process_component_statements(evl_components &components, evl_statement &s, const evl_wires &wires) {
-	assert(s.type == evl_statement::COMPONENT);
+bool process_component_statements(evl_components &components, evl_statement &s, evl_wires &wires, evl_checkpoints &check) {
+	//assert(s.type == evl_statement::COMPONENT);
 
 	enum state_type {INIT, TYPE, NAME, PINS, PIN_NAME, PINS_DONE, BUS, BUS_MSB, BUS_COLON, BUS_LSB, BUS_DONE, DONE};
 	
@@ -350,9 +276,10 @@ bool process_component_statements(evl_components &components, evl_statement &s, 
 	std::string pin_name = "";
 	int bus_msb = -1;
 	int bus_lsb = -1;
-
+	int count = 0;
+	int count_2;
 	state_type state = INIT;
-	
+
 	for(; !s.tokens.empty() && (state != DONE); s.tokens.pop_front()){
 		evl_token t = s.tokens.front();
 		
@@ -366,11 +293,7 @@ bool process_component_statements(evl_components &components, evl_statement &s, 
 			}
 		}
 		else if (state == TYPE){
-			if (t.type == evl_token::NAME) {
-				comp_name = t.str;
-				state = NAME;
-			}
-			else if (t.type == evl_token::SINGLE && t.str == "(") {
+			if (t.type == evl_token::SINGLE && t.str == "(") {
 				state = PINS;
 			}
 			else {
@@ -382,24 +305,23 @@ bool process_component_statements(evl_components &components, evl_statement &s, 
 			component.name = comp_name;
 			components.push_back(component);
 			
-		}
-		else if (state == NAME) {
-			if (t.type == evl_token::SINGLE &&  t.str == "("){
-				state = PINS;
+			if(comp_type == "OUTPUT") {
+				count_2 = 10;
 			}
-			else {
-				std::cerr << "Need '(' but found '" << t.str << "' at line " << t.line_no << std::endl;
-				return false;
-			}
+			else
+				count_2 = 0;
+
 		}
 		else if (state == PINS) {
-			
+			//int count = 0;
 			if (t.type == evl_token::NAME) {
-				evl_wires::const_iterator it = wires.find(t.str);
+				evl_wires::iterator it = wires.find(t.str);
 				if (it == wires.end()) {
 					std::cerr << "Wire '" << t.str << "' on line " << t.line_no << " is not defined" << std::endl;
 					return false;
 				}
+				count = it->second + count_2;
+				it->second = ++count;
 				pin_name = t.str;
 			}
 			state = PIN_NAME;			
@@ -407,143 +329,43 @@ bool process_component_statements(evl_components &components, evl_statement &s, 
 		else if (state == PIN_NAME) {
 			bus_msb = -1;
 			bus_lsb = -1;
-
+			//int count = 0;
 			if (t.str == ")"){
-				
-
-				evl_wires::const_iterator it = wires.find(pin_name);
-				if (it->second >= 2) {
-					bus_msb = it->second-1;
-					bus_lsb = 0;
-				}
+				evl_wires::iterator it = wires.find(pin_name);
+				count = it->second + count_2;
+				it->second = ++count; 
+				//if (it->second >= 2) {
+				//	bus_msb = it->second-1;
+				//	bus_lsb = 0;
+				//}
 				evl_pin pins;
 				pins.lsb = bus_lsb;
 				pins.msb = bus_msb;
 				pins.pin_name = pin_name;
-				
-				components.back().comp_pins.push_back(pins);
 							
-				state = PINS_DONE;
+				components.back().comp_pins.push_back(pins);
+				
+				state = DONE;
 			}
 			else if (t.str == ","){
-				evl_wires::const_iterator it = wires.find(pin_name);
-				if (it->second >= 2) {
-					bus_msb = it->second-1;
-					bus_lsb = 0;
-				}
-				
+				evl_wires::iterator it = wires.find(pin_name);
+				//if (it->second >= 2) {
+				//	bus_msb = it->second-1;
+				//	bus_lsb = 0;
+				//}
+				count = it->second + count_2;
+				it->second = ++count; 
 				evl_pin pins;			
 				pins.lsb = bus_lsb;
 				pins.msb = bus_msb;
-				pins.pin_name = pin_name;
-				
+				pins.pin_name = pin_name;	
+
 				components.back().comp_pins.push_back(pins);
 				
 				state = PINS;
-			}
-			else if (t.str == "[") {
-				state = BUS;
 			}
 			else { 
 				std::cerr << "Need ',' or ')' or '[' but found '" << t.str << "' on line " << t.line_no <<std::endl;
-				return false;
-			}
-		}
-		else if (state == BUS) {
-			if(t.type == evl_token::NUMBER) {
-				bus_msb = atoi(t.str.c_str());
-			}
-			else {
-				std::cerr << "Need 'number' but found '" << t.str << "' on line " << t.line_no << std::endl;
-				return false;
-			}
-			state = BUS_MSB;
-		}
-		else if (state == BUS_MSB) {
-			if (t.str == "]") {
-				evl_wires::const_iterator it = wires.find(pin_name);
-				int found_wire_msb = it->second-1;
-				
-				if (bus_msb > found_wire_msb){
-					std::cerr << "Bus MSB of value: " << bus_msb << " must be greater than or equal to the wire bus msb of value: " << found_wire_msb << std::endl;
-					return false;
-				}
-				if (bus_msb < 0) {
-					std::cerr << "Bus MSB of value: " << bus_msb << " must be greater than 0." << std::endl;
-				}
-				bus_lsb = bus_msb;
-				state = BUS_DONE;
-			}
-			else if (t.str == ":") {
-				state = BUS_COLON;
-			}
-			else {
-				std::cerr << "Need ']' or ':' but found '" << t.str << "' on line " << t.line_no <<std::endl;
-				return false;
-			}
-		}
-		else if (state == BUS_COLON) {
-			evl_wires::const_iterator it = wires.find(pin_name);
-			int found_wire_msb = it->second-1;
-
-			if (t.type == evl_token::NUMBER) {
-				bus_lsb = atoi(t.str.c_str());
-			}
-			else {
-				std::cerr << "Need 'number' but found '" << t.str << "' on line " << t.line_no << std::endl;
-				return false;
-			}
-			if (bus_msb < bus_lsb) {
-				std::cerr << "Bus msb: " << bus_msb << " can not be less than Bus lsb " << bus_lsb << std::endl;
-				return false;
-			}
-			if (bus_msb > found_wire_msb) {
-				std::cerr << "Bus msb is: " << bus_msb << ". Needs to less than or equal to  wire bus msb: " << found_wire_msb << std::endl;
-				return false;
-			}
-			if (bus_lsb < 0) {
-				std::cerr << "Bus lsb is: " << bus_lsb << ". Needs to be greater than 0" << std::endl;
-				return false;
-			}
-			
-			state = BUS_LSB;
-		}
-		else if (state == BUS_LSB) {
-			if (!(t.str == "]")) {
-				std::cerr << "Need ']' but found '" << t.str << "' on line " << t.line_no << std::endl;
-				return false;
-			}
-			state = BUS_DONE;
-		}
-		else if (state == BUS_DONE) {
-			if (t.str == ")") {
-				evl_pin pins;
-				pins.lsb = bus_lsb;
-				pins.msb = bus_msb;
-				pins.pin_name = pin_name;
-
-				components.back().comp_pins.push_back(pins);
-				state = PINS_DONE;
-			}
-			else if (t.str == ",") {
-				
-				evl_pin pins;			
-				pins.lsb = bus_lsb;
-				pins.msb = bus_msb;
-				pins.pin_name = pin_name;
-				
-				components.back().comp_pins.push_back(pins);
-				
-				state = PINS;
-			}
-		}
-
-		else if (state == PINS_DONE) {
-			if (t.str == ";") {
-				state = DONE;
-			}
-			else {
-				std::cerr << "Need ';' but found '" << t.str << "' on line " << t.line_no << std::endl;
 				return false;
 			}
 		}
@@ -571,7 +393,6 @@ void display_module(std::ostream &out, const evl_modules &modules) {
 				out << "pin " << it4->pin_name << " " << it4->msb << " " << it4->lsb << std::endl;
 			}
 		}
-	
 	}
 
 }
@@ -609,14 +430,13 @@ bool parse_evl_file(std::string file_name, evl_modules &modules) {
 	}
 
 	evl_statements::const_iterator mod_itr;
-	if (!reorder_statements_list(mod_itr,statements)) {		//Reorders the statements list to put wires first
-			return false;
-	}
-
+    if (!reorder_statements_list(mod_itr,statements)) {                //Reorders the statements list to put wires first
+		return false;
+    }
 	//display_statements(std::cout,statements);	//displays after the sort is performed
 	
 	for (evl_statements::iterator iter = statements.begin(); iter != statements.end(); ++iter) {
-		if (!process_module_statements(modules,*iter)) {
+		if (!process_statements(modules,*iter)) {
 			return false;
 		}
 	}
