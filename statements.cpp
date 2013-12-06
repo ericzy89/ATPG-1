@@ -304,12 +304,8 @@ bool process_component_statements(evl_components &components, evl_statement &s, 
 			component.type = comp_type;
 			component.name = comp_name;
 			components.push_back(component);
-			
-			if(comp_type == "OUTPUT") {
-				count_2 = 10;
-			}
-			else
-				count_2 = 0;
+		
+			count_2 = 0;
 
 		}
 		else if (state == PINS) {

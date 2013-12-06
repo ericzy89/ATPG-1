@@ -1,0 +1,62 @@
+module top 17 18
+wire G0 5
+wire G1 5
+wire G10 3
+wire G11 7
+wire G12 5
+wire G13 3
+wire G14 5
+wire G15 3
+wire G16 3
+wire G17 3
+wire G2 5
+wire G3 5
+wire G5 3
+wire G6 3
+wire G7 3
+wire G8 5
+wire G9 3
+component INPUT NONE 1
+pin G0 -1 -1
+component INPUT NONE 1
+pin G1 -1 -1
+component INPUT NONE 1
+pin G2 -1 -1
+component INPUT NONE 1
+pin G3 -1 -1
+component OUTPUT NONE 1
+pin G17 -1 -1
+component DFF NONE 1
+pin G10 -1 -1
+component DFF NONE 1
+pin G11 -1 -1
+component DFF NONE 1
+pin G13 -1 -1
+component NOT NONE 1
+pin G0 -1 -1
+component NOT NONE 1
+pin G11 -1 -1
+component AND NONE 2
+pin G14 -1 -1
+pin G6 -1 -1
+component OR NONE 2
+pin G12 -1 -1
+pin G8 -1 -1
+component OR NONE 2
+pin G3 -1 -1
+pin G8 -1 -1
+component NAND NONE 2
+pin G16 -1 -1
+pin G15 -1 -1
+component NOR NONE 2
+pin G14 -1 -1
+pin G11 -1 -1
+component NOR NONE 2
+pin G5 -1 -1
+pin G9 -1 -1
+component NOR NONE 2
+pin G1 -1 -1
+pin G7 -1 -1
+component NOR NONE 2
+pin G2 -1 -1
+pin G12 -1 -1
